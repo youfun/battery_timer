@@ -31,6 +31,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+          mise_toml: |
+            [tools]
+            zig = "0.17.0-dev.269+ebff43698"
+
       - name: Android SDK and NDK
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"

@@ -38,6 +38,7 @@ defmodule Mix.Tasks.Mob.PackApk do
     Mix.shell().info("Packing OTP for ABI #{abi} into debug APK...")
 
     with {:ok, otp_dir} <- MobDev.OtpDownloader.ensure_android(abi),
+         :ok <- zig_native(abi, otp_dir),
          {:ok, staging} <- stage(otp_dir, app_name),
          zip_path <- zip_path(),
          :ok <- File.mkdir_p(Path.dirname(zip_path)),
@@ -53,6 +54,97 @@ defmodule Mix.Tasks.Mob.PackApk do
       if install?, do: install_apk(apk, opts[:device]), else: :ok
     else
       {:error, reason} -> Mix.raise(inspect(reason))
+    end
+  end
+
+  defp zig_native(abi, otp_dir) do
+    case MobDev.Toolchain.zig_status() do
+      {:ok, _} ->
+        copy_erts_helpers!(otp_dir, abi)
+        run_zig(abi, otp_dir)
+
+      status ->
+        {:error, MobDev.NativeBuild.zig_required_message(status)}
+    end
+  end
+
+  defp run_zig(abi, otp_dir) do
+    platform =
+      case abi do
+        "arm64-v8a" -> :android_arm64
+        "armeabi-v7a" -> :android_arm32
+        "x86_64" -> :android_x86_64
+      end
+
+    {:ok, nif_args} = MobDev.NativeBuild.project_nif_zig_args(platform)
+    nif_args = Enum.reject(nif_args, &String.starts_with?(&1, "-Dproject_root="))
+
+    app_name = Mix.Project.config()[:app] |> to_string()
+    root = Path.expand(".")
+    jni_libs = Path.join([root, "android/app/src/main/jniLibs", abi])
+    File.mkdir_p!(jni_libs)
+
+    args = [
+      "build",
+      "native-lib",
+      "--build-file",
+      "android/app/src/main/jni/build.zig",
+      "--prefix",
+      "android/app/build/zig-out",
+      "-Dabi=#{abi}",
+      "-Dotp_dir=#{otp_dir}",
+      "-Derts_vsn=#{erts_vsn(otp_dir)}",
+      "-Dmob_dir=#{Path.join(root, "deps/mob")}",
+      "-Ddriver_tab=#{Path.join(root, "priv/generated/driver_tab_android.zig")}",
+      "-Dproject_jni_dir=#{Path.join(root, "android/app/src/main/jni")}",
+      "-Dndk_sysroot=#{MobDev.NdkVersion.sysroot()}",
+      "-Dapp_name=#{app_name}",
+      "-Dproject_root=#{root}",
+      "-Dexqlite_src=#{Path.join(root, "deps/exqlite/c_src")}"
+      | nif_args
+    ]
+
+    Mix.shell().info("  zig build native-lib -Dabi=#{abi}")
+
+    case System.cmd("zig", args, stderr_to_stdout: true, into: IO.stream()) do
+      {_, 0} -> :ok
+      {_, rc} -> {:error, "zig build #{abi} failed (#{rc})"}
+    end
+  end
+
+  defp copy_erts_helpers!(otp_dir, abi) do
+    jni_libs = Path.join(["android/app/src/main/jniLibs", abi])
+    File.mkdir_p!(jni_libs)
+
+    case Path.wildcard(Path.join(otp_dir, "erts-*/bin")) do
+      [erts_bins | _] ->
+        Enum.each(
+          [
+            {"erl_child_setup", "liberl_child_setup.so"},
+            {"inet_gethost", "libinet_gethost.so"},
+            {"epmd", "libepmd.so"}
+          ],
+          fn {exe, lib} ->
+            src = Path.join(erts_bins, exe)
+            if File.exists?(src), do: File.cp!(src, Path.join(jni_libs, lib))
+          end
+        )
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp erts_vsn(otp_dir) do
+    case File.ls(otp_dir) do
+      {:ok, entries} ->
+        entries
+        |> Enum.filter(&String.starts_with?(&1, "erts-"))
+        |> Enum.sort(:desc)
+        |> List.first() || "erts-17.0"
+
+      _ ->
+        "erts-17.0"
     end
   end
 
