@@ -1,0 +1,81 @@
+# OTP zip is one ABI per APK (MobBridge.extractOtpIfNeeded unpacks a single
+# runtime). arm64-v8a is phones; x86_64 is Chromos/ARC and most emulators.
+name: Android APK
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            tools
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;27.2.12479018
+            cmake;3.22.1
+
+      - name: Host packages
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libvips-dev
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.mob/cache
+            deps
+            _build
+            ~/.mix
+            ~/.hex
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: mob-apk-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mob-apk-${{ runner.os }}-
+
+      - name: Setup Mob Android
+        run: bash script/ci_setup_android.sh
+
+      - name: Test
+        run: mix test
+
+      - name: Pack arm64-v8a APK
+        run: |
+          mkdir -p artifacts
+          mix mob.pack_apk --abi arm64-v8a --no-install \
+            --output artifacts/battery_timer-arm64-v8a.apk
+
+      - name: Pack x86_64 APK
+        run: |
+          mix mob.pack_apk --abi x86_64 --no-install \
+            --output artifacts/battery_timer-x86_64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: battery-timer-apk
+          path: artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 14
