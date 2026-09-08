@@ -17,10 +17,16 @@ def keystorePropsFile = rootProject.file('keystore.properties')
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) keystoreProps.load(keystorePropsFile.newDataInputStream())
 
-def mobOtpRelease     = localProps.getProperty('mob.otp_release',      System.getenv('MOB_ANDROID_OTP_RELEASE')      ?: '')
-def mobOtpReleaseArm32 = localProps.getProperty('mob.otp_release_arm32', System.getenv('MOB_ANDROID_OTP_RELEASE_ARM32') ?: mobOtpRelease)
-def mobOtpReleaseX86_64 = localProps.getProperty('mob.otp_release_x86_64', System.getenv('MOB_ANDROID_OTP_RELEASE_X86_64') ?: mobOtpRelease)
-def mobDir             = localProps.getProperty('mob.mob_dir',           System.getenv('MOB_DIR')                       ?: '')
+def otpPath = { String key, String envKey, String fallback = '' ->
+    def fromProps = localProps.getProperty(key, '')
+    def fromEnv = System.getenv(envKey) ?: fallback
+    (fromProps && new File(fromProps).isDirectory()) ? fromProps : fromEnv
+}
+
+def mobOtpRelease      = otpPath('mob.otp_release', 'MOB_ANDROID_OTP_RELEASE')
+def mobOtpReleaseArm32 = otpPath('mob.otp_release_arm32', 'MOB_ANDROID_OTP_RELEASE_ARM32', mobOtpRelease)
+def mobOtpReleaseX86_64 = otpPath('mob.otp_release_x86_64', 'MOB_ANDROID_OTP_RELEASE_X86_64', mobOtpRelease)
+def mobDir             = otpPath('mob.mob_dir', 'MOB_DIR')
 
 // Auto-detect ERTS version from the OTP release directory (arm64 is canonical).
 def ertsVsn = new File(mobOtpRelease).listFiles()

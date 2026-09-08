@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Non-interactive Mob Android setup for CI (and a fresh clone).
-# Writes gitignored mob.exs / android/local.properties, fetches Hex deps,
-# downloads arm64 + x86_64 OTP runtimes into ~/.mob/cache.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,30 +38,7 @@ fi
 mix local.hex --force
 mix local.rebar --force
 mix deps.get
-
-ensure_otp() {
-  local abi="$1"
-  mix eval "
-    case MobDev.OtpDownloader.ensure_android(\"${abi}\") do
-      {:ok, path} -> IO.write(path)
-      other -> Mix.raise(\"OTP ${abi}: \" <> inspect(other))
-    end
-  "
-}
-
-otp_arm64="$(ensure_otp arm64-v8a)"
-otp_arm32="$(ensure_otp armeabi-v7a)"
-otp_x86="$(ensure_otp x86_64)"
-mob_dir="$root/deps/mob"
-
-mkdir -p android
-cat > android/local.properties <<EOF
-sdk.dir=${ANDROID_HOME}
-mob.otp_release=${otp_arm64}
-mob.otp_release_arm32=${otp_arm32}
-mob.otp_release_x86_64=${otp_x86}
-mob.mob_dir=${mob_dir}
-EOF
+mix mob.write_local_properties
 
 echo "android/local.properties:"
 cat android/local.properties

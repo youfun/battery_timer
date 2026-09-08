@@ -63,6 +63,15 @@ jobs:
       - name: Setup Mob Android
         run: bash script/ci_setup_android.sh
 
+      - name: Export OTP paths for Gradle
+        run: |
+          {
+            echo "MOB_ANDROID_OTP_RELEASE=$(grep '^mob.otp_release=' android/local.properties | cut -d= -f2-)"
+            echo "MOB_ANDROID_OTP_RELEASE_ARM32=$(grep '^mob.otp_release_arm32=' android/local.properties | cut -d= -f2-)"
+            echo "MOB_ANDROID_OTP_RELEASE_X86_64=$(grep '^mob.otp_release_x86_64=' android/local.properties | cut -d= -f2-)"
+            echo "MOB_DIR=$(grep '^mob.mob_dir=' android/local.properties | cut -d= -f2-)"
+          } >> "$GITHUB_ENV"
+
       - name: Test
         run: mix test
 
